@@ -59,12 +59,11 @@ public class HandTrackingAR : MonoBehaviour
 
     [SerializeField] private RawImage _screen;
     [SerializeField] private ARCameraManager _cameraManager;
+    [SerializeField] private GameObject _handPoint;
 
     private CalculatorGraph _graph;
     private static UnityEngine.Rect _screenRect;
-    private static Hand _hand;
-    private static bool _isMirrored;
-    private static RotationAngle _rotation;
+    private GameObject[] hand;
     private Stopwatch _stopwatch;
     private ResourceManager _resourceManager;
     private GpuResources _gpuResources;
@@ -72,13 +71,6 @@ public class HandTrackingAR : MonoBehaviour
     private const string _InputStreamName = "input_video";
     private const string _SidePacketModelComplexity = "model_complexity";
     private const string _SidePacketMaxHandsName = "num_hands";
-
-    private const string _PalmDetectionsStreamName = "palm_detections";
-    private const string _HandRectsFromPalmDetectionsStreamName = "hand_rects_from_palm_detections";
-    private const string _HandLandmarkStreamName = "hand_landmarks";
-    private const string _HandWorldLandmarkStreamName = "hand_world_landmarks";
-    private const string _HandRectsFromLandmarksStreamName = "hand_rects_from_landmarks";
-    private const string _HandednessStreamName = "handedness";
 
     private OutputStream<NormalizedLandmarkListVectorPacket, List<NormalizedLandmarkList>> _handLandmarkStream;
 
@@ -91,7 +83,11 @@ public class HandTrackingAR : MonoBehaviour
 
         _cameraManager.frameReceived += OnCameraFrameReceived;
         _gpuResources = (_inferenceMode == InferenceMode.GPU) ? GpuResources.Create().Value() : null;
-        _hand = GameObject.Find("Hand").GetComponent<Hand>();
+        hand = new GameObject[21];
+        for (var i = 0; i < 21; i++)
+        {
+            hand[i] = Instantiate(_handPoint, _screen.transform);
+        }
 
         _resourceManager = new StreamingAssetsResourceManager();
         if (_modelComplexity == ModelComplexity.Lite)
@@ -136,20 +132,16 @@ public class HandTrackingAR : MonoBehaviour
         if (_gpuResources != null)
             _graph.SetGpuResources(_gpuResources).AssertOk();
         _screenRect = _screen.GetComponent<RectTransform>().rect;
-        //_isMirrored = true ^ false ^ false;
-        //_rotation = (360) % 360;
 
         _handLandmarkStream = new OutputStream<NormalizedLandmarkListVectorPacket, List<NormalizedLandmarkList>>(
             _graph, "hand_landmarks");
 
         _handLandmarkStream.StartPolling().AssertOk();
-        //_handLandmarkStream.AddListener(OnHandLandmarksOutput);
-        //_graph.ObserveOutputStream(_HandLandmarkStreamName, 4, HandLandmarkCallback, true).AssertOk();
 
         var sidePacket = new SidePacket();
         sidePacket.Emplace(_SidePacketModelComplexity, new IntPacket((int)_modelComplexity));
         sidePacket.Emplace(_SidePacketMaxHandsName, new IntPacket((int)_maxNumHands));
-        sidePacket.Emplace("input_rotation", new IntPacket(270));
+        sidePacket.Emplace("input_rotation", new IntPacket(90));
         sidePacket.Emplace("input_horizontally_flipped", new BoolPacket(true));
         sidePacket.Emplace("input_vertically_flipped", new BoolPacket(true));
 
@@ -178,8 +170,7 @@ public class HandTrackingAR : MonoBehaviour
                     for (var i = 0; i < landmarks.Landmark.Count; i++)
                     {
                         var worldLandmarkPos = _screenRect.GetPoint(landmarks.Landmark[i]);
-                        Debug.Log(worldLandmarkPos.x + " " + worldLandmarkPos.y + " " + worldLandmarkPos.z);
-                        _hand.SetHandPoint(new Vector3(worldLandmarkPos.x * 0.11f, worldLandmarkPos.y * 0.11f + 7, worldLandmarkPos.z * 0.11f), i);
+                        hand[i].transform.localPosition = worldLandmarkPos;
                     }
                 }
             }
@@ -197,53 +188,6 @@ public class HandTrackingAR : MonoBehaviour
         if (_buffer == null || _buffer.Length != length)
         {
             _buffer = new NativeArray<byte>(length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        }
-    }
-
-    [AOT.MonoPInvokeCallback(typeof(CalculatorGraph.NativePacketCallback))]
-    private static Status.StatusArgs HandLandmarkCallback(IntPtr graphPtr, int streamId, IntPtr packetPtr)
-    {
-        Debug.Log("HERE3");
-        try
-        {
-            using (var packet = new NormalizedLandmarkListVectorPacket(packetPtr, false))
-            {
-                Debug.Log("HERE4");
-                if (!packet.IsEmpty())
-                {
-                    Debug.Log("HERE5");
-                    var output = packet.Get();
-                    Debug.Log("HERE6");
-                    ConsoleResult(output);
-                }
-            }
-            return Status.StatusArgs.Ok();
-        }
-        catch (Exception e)
-        {
-            Debug.Log("HERE6");
-            return Status.StatusArgs.Internal(e.ToString());
-        }
-    }
-
-
-    private static void ConsoleResult(List<NormalizedLandmarkList> hand_landmark)
-    {
-        Debug.Log("HERE");
-        if (hand_landmark != null && hand_landmark.Count > 0)
-        {
-            Debug.Log("HERE1");
-            foreach (var hand in hand_landmark)
-            {
-                for (var i = 0; i < hand.Landmark.Count; i++)
-                {
-                    var worldLandmarkPos = _screenRect.GetPoint(hand.Landmark[i]);
-                    worldLandmarkPos.x = worldLandmarkPos.x * 0.05f;
-                    worldLandmarkPos.y = worldLandmarkPos.x * 0.05f;
-                    worldLandmarkPos.z = worldLandmarkPos.x * 0.05f;
-                    _hand.SetHandPoint(worldLandmarkPos, i);
-                }
-            }
         }
     }
 

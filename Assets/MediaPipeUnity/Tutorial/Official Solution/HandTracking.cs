@@ -15,7 +15,7 @@ public class HandTracking : MonoBehaviour
     [SerializeField] private int _width;
     [SerializeField] private int _height;
     [SerializeField] private int _fps;
-    [SerializeField] private GameObject[] _handPoints;
+    [SerializeField] private GameObject _handPoint;
 
     private CalculatorGraph _graph;
     private ResourceManager _resourceManager;
@@ -23,6 +23,7 @@ public class HandTracking : MonoBehaviour
     private WebCamTexture _webCamTexture;
     private Texture2D _inputTexture;
     private Color32[] _pixelData;
+    private GameObject[] hand;
 
     
     private IEnumerator Start()
@@ -35,15 +36,21 @@ public class HandTracking : MonoBehaviour
         var webcamDevice = WebCamTexture.devices[0];
         _webCamTexture = new WebCamTexture(webcamDevice.name, _width, _height, _fps);
         _webCamTexture.Play();
+        hand = new GameObject[21];
+        for (var i = 0; i < 21; i++)
+        {
+            hand[i] = Instantiate(_handPoint, _screen.transform);
+        }
 
         // return coroutine function
         yield return new WaitUntil(() => _webCamTexture.width > 16);
-        yield return GpuManager.Initialize();
+        //_screen.rectTransform.sizeDelta = new Vector2(_width, _height);
+        /*yield return GpuManager.Initialize();
 
         if (!GpuManager.IsInitialized)
         {
             throw new System.Exception("GPU Resources Could Not Started");
-        }
+        }*/
 
         //_screen.rectTransform.sizeDelta = new Vector2(_width, _height);
         //_screen.texture = _webCamTexture;
@@ -65,7 +72,7 @@ public class HandTracking : MonoBehaviour
 
         // CalculatorGraph initialize
         _graph = new CalculatorGraph(_configAsset.text);
-        _graph.SetGpuResources(GpuManager.GpuResources).AssertOk();
+        //_graph.SetGpuResources(GpuManager.GpuResources).AssertOk();
 
         // Bring landmarks ourputstream
         var handLandmarksStream = new OutputStream<NormalizedLandmarkListVectorPacket, List<NormalizedLandmarkList>>(
@@ -113,7 +120,7 @@ public class HandTracking : MonoBehaviour
                     for (var i = 0; i < landmarks.Landmark.Count; i++)
                     {
                         var worldLandmarkPos = screenRect.GetPoint(landmarks.Landmark[i]);
-                        _handPoints[i].transform.position = new Vector3(worldLandmarkPos.x * 0.26f, worldLandmarkPos.y * 0.26f, worldLandmarkPos.z * 0.26f + 100);
+                        hand[i].transform.localPosition = worldLandmarkPos;
                     }
                 }
             }

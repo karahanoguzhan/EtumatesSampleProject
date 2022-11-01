@@ -7,6 +7,6 @@ public class Hand : MonoBehaviour
 
     public void SetHandPoint(Vector3 landmarkPos, int point)
     {
-        _handPoints[point].transform.position = landmarkPos;
+        _handPoints[point].transform.localPosition = landmarkPos;
     }
 }
