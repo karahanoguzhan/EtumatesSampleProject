@@ -31,6 +31,18 @@ using System;
 
 public class HandTrackingAR : MonoBehaviour
 {
+    private struct ImageSource
+    {
+        public RotationAngle rotation;
+        public bool isHorizontallyFlipped;
+
+        public ImageSource(RotationAngle _angle, bool _isHorizontallyFlipped)
+        {
+            rotation = _angle;
+            isHorizontallyFlipped = _isHorizontallyFlipped;
+        }
+    }
+
     private enum InferenceMode
     {
         CPU,
@@ -141,7 +153,7 @@ public class HandTrackingAR : MonoBehaviour
         var sidePacket = new SidePacket();
         sidePacket.Emplace(_SidePacketModelComplexity, new IntPacket((int)_modelComplexity));
         sidePacket.Emplace(_SidePacketMaxHandsName, new IntPacket((int)_maxNumHands));
-        sidePacket.Emplace("input_rotation", new IntPacket(90));
+        sidePacket.Emplace("input_rotation", new IntPacket(270));
         sidePacket.Emplace("input_horizontally_flipped", new BoolPacket(true));
         sidePacket.Emplace("input_vertically_flipped", new BoolPacket(true));
 
@@ -189,6 +201,72 @@ public class HandTrackingAR : MonoBehaviour
         {
             _buffer = new NativeArray<byte>(length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         }
+    }
+
+    private void SetImageTransformationOptions(SidePacket sidePacket, ImageSource imageSource, bool expectedToBeMirrored = false)
+    {
+        // NOTE: The origin is left-bottom corner in Unity, and right-top corner in MediaPipe.
+        RotationAngle rotation = imageSource.rotation.Reverse();
+        var inputRotation = rotation;
+        var isInverted = ImageCoordinate.IsInverted(rotation);
+        var shouldBeMirrored = imageSource.isHorizontallyFlipped ^ expectedToBeMirrored;
+        var inputHorizontallyFlipped = isInverted ^ shouldBeMirrored;
+        var inputVerticallyFlipped = !isInverted;
+
+        if ((inputHorizontallyFlipped && inputVerticallyFlipped) || rotation == RotationAngle.Rotation180)
+        {
+            inputRotation = inputRotation.Add(RotationAngle.Rotation180);
+            inputHorizontallyFlipped = !inputHorizontallyFlipped;
+            inputVerticallyFlipped = !inputVerticallyFlipped;
+        }
+
+        Debug.Log($"input_rotation = {inputRotation}, input_horizontally_flipped = {inputHorizontallyFlipped}, input_vertically_flipped = {inputVerticallyFlipped}");
+
+        sidePacket.Emplace("input_rotation", new IntPacket((int)inputRotation));
+        sidePacket.Emplace("input_horizontally_flipped", new BoolPacket(inputHorizontallyFlipped));
+        sidePacket.Emplace("input_vertically_flipped", new BoolPacket(inputVerticallyFlipped));
+    }
+
+    private int _GetCameraImageToDisplayRotation()
+    {
+#if !UNITY_EDITOR
+            AndroidJavaClass cameraClass = new AndroidJavaClass("android.hardware.Camera");
+            AndroidJavaClass cameraInfoClass = new AndroidJavaClass("android.hardware.Camera$CameraInfo");
+            AndroidJavaObject cameraInfo = new AndroidJavaObject("android.hardware.Camera$CameraInfo");
+            cameraClass.CallStatic("getCameraInfo", cameraInfoClass.GetStatic<int>("CAMERA_FACING_BACK"),
+                cameraInfo);
+            int cameraRotationToNaturalDisplayOrientation = cameraInfo.Get<int>("orientation");
+
+            AndroidJavaClass contextClass = new AndroidJavaClass("android.content.Context");
+            AndroidJavaClass unityPlayerClass = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+            AndroidJavaObject unityActivity = unityPlayerClass.GetStatic<AndroidJavaObject>("currentActivity");
+            AndroidJavaObject windowManager =
+                unityActivity.Call<AndroidJavaObject>("getSystemService",
+                contextClass.GetStatic<string>("WINDOW_SERVICE"));
+
+            AndroidJavaClass surfaceClass = new AndroidJavaClass("android.view.Surface");
+            int displayRotationFromNaturalEnum = windowManager
+                .Call<AndroidJavaObject>("getDefaultDisplay").Call<int>("getRotation");
+
+            int displayRotationFromNatural = 0;
+            if (displayRotationFromNaturalEnum == surfaceClass.GetStatic<int>("ROTATION_90"))
+            {
+                displayRotationFromNatural = 90;
+            }
+            else if (displayRotationFromNaturalEnum == surfaceClass.GetStatic<int>("ROTATION_180"))
+            {
+                displayRotationFromNatural = 180;
+            }
+            else if (displayRotationFromNaturalEnum == surfaceClass.GetStatic<int>("ROTATION_270"))
+            {
+                displayRotationFromNatural = 270;
+            }
+
+            return (cameraRotationToNaturalDisplayOrientation + displayRotationFromNatural) % 360;
+#else  // !UNITY_EDITOR
+        // Using Instant Preview in the Unity Editor, the display orientation is always portrait.
+        return 0;
+#endif  // !UNITY_EDITOR
     }
 
     private void OnDestroy()
